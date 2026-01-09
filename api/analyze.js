@@ -6,6 +6,7 @@ export default async function handler(req, res) {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
+        console.error("API Key eksik!");
         return res.status(500).json({ error: 'Server API Key eksik.' });
     }
 
@@ -16,7 +17,7 @@ export default async function handler(req, res) {
 
     // --- MOD 1: TICKER ---
     if (mode === 'ticker') {
-        systemInstruction = "Sen bir finansal veri asistanısın. Sadece geçerli bir JSON objesi döndür. Asla markdown ```json``` etiketi kullanma, sadece saf JSON ver. Kaynakları mutlaka ekle.";
+        systemInstruction = "Sen bir finansal veri asistanısın. Sadece geçerli bir JSON objesi döndür. Kaynakları mutlaka ekle.";
         userPrompt = `
       GÖREV: Google Arama ile şu anki güncel fiyatları bul:
       Gram Altın (TRY), Ons Altın (USD), Gümüş (Ons/USD), Bitcoin (BTC/USD), Brent Petrol (USD), USD/TRY, EUR/TRY, İsviçre Frangı.
@@ -75,7 +76,6 @@ export default async function handler(req, res) {
 
         if (!response.ok) {
             const errText = await response.text();
-            // Hata detayını frontend'e gönder ki görebilelim
             throw new Error(`Gemini API Error: ${response.status} - ${errText}`);
         }
 
@@ -93,7 +93,6 @@ export default async function handler(req, res) {
             parsedResult = JSON.parse(rawText);
         } catch (e) {
             console.error("JSON Parse Hatası:", rawText);
-            // Fallback
             parsedResult = {
                 error: "JSON Hatası",
                 report_markdown: "Veri işlenirken hata oluştu. Lütfen tekrar deneyin.",
@@ -105,9 +104,7 @@ export default async function handler(req, res) {
             };
         }
 
-        // --- KAYNAK BİRLEŞTİRME (DÜZELTİLDİ) ---
-        // Hata buradaydı: undefined üzerinde .filter() çalıştırıyorduk.
-
+        // KAYNAK BİRLEŞTİRME
         let metaSources = [];
         if (data.candidates?.[0]?.groundingMetadata?.groundingAttributions) {
             metaSources = data.candidates[0].groundingMetadata.groundingAttributions
@@ -115,19 +112,16 @@ export default async function handler(req, res) {
                     title: a.web?.title || "Web Kaynağı",
                     uri: a.web?.uri
                 }))
-                .filter(s => s.uri); // Linki olmayanları ele
+                .filter(s => s.uri);
         }
 
         const jsonSources = parsedResult.sources || [];
-
-        // İkisini birleştir
         const allSources = [...metaSources, ...jsonSources].filter((v, i, a) => a.findIndex(t => (t.uri === v.uri)) === i);
 
         return res.status(200).json({ data: parsedResult, sources: allSources });
 
     } catch (error) {
         console.error('Handler Error:', error.message);
-        // Hatayı 500 olarak döndür ama mesajı da göster
         return res.status(500).json({ error: error.message });
     }
 }
