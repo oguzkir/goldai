@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Piyasa Terminali v2.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;400;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #020617;
+            color: #e2e8f0;
+        }
+
+        .terminal-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 65vh;
+            min-height: 500px;
+        }
+
+        /* UI Elements */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(51, 65, 85, 0.5);
+        }
+
+        .ticker-item {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Markdown Styling */
+        .markdown-body h1,
+        .markdown-body h2 {
+            color: #facc15;
+            font-weight: 700;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 0.3em;
+        }
+
+        .markdown-body strong {
+            color: #fff;
+            font-weight: 700;
+        }
+
+        .markdown-body ul {
+            list-style-type: square;
+            margin-left: 1.5em;
+            color: #94a3b8;
+        }
+
+        .markdown-body p {
+            margin-bottom: 1em;
+            line-height: 1.7;
+            font-size: 0.95rem;
+        }
+
+        .markdown-body a {
+            color: #60a5fa;
+            text-decoration: none;
+            border-bottom: 1px dotted #60a5fa;
+        }
+
+        .markdown-body blockquote {
+            border-left: 3px solid #facc15;
+            padding-left: 1em;
+            color: #cbd5e1;
+            font-style: italic;
+        }
+
+        /* Custom Checkbox */
+        .asset-btn.active {
+            background-color: #facc15;
+            color: #000;
+            border-color: #facc15;
+        }
+
+        .asset-btn {
+            transition: all 0.2s;
+        }
+    </style>
+</head>
+
+<body class="selection:bg-yellow-500 selection:text-black">
+
+    <!-- Navbar -->
+    <header class="border-b border-slate-800 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
+        <div class="container mx-auto px-4 py-3 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div
+                    class="w-10 h-10 bg-gradient-to-br from-yellow-600 to-yellow-400 rounded flex items-center justify-center text-black font-black text-xl shadow-lg shadow-yellow-900/40">
+                    G</div>
+                <div>
+                    <h1 class="text-base font-bold text-white tracking-wide leading-none">GOLD <span
+                            class="text-yellow-500">INTELLIGENCE</span></h1>
+                    <p class="text-[10px] text-slate-500 terminal-font mt-0.5">HISTORICAL DATA & AI FORECAST</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-6 text-xs terminal-font">
+                <div class="flex items-center gap-2">
+                    <span id="status-dot" class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    <span id="system-status" class="text-slate-400">SERVER ONLINE</span>
+                </div>
+                <!-- Asset Selector for Analysis -->
+                <div class="flex gap-2">
+                    <select id="asset-select"
+                        class="bg-slate-900 border border-slate-700 text-white rounded px-3 py-1.5 focus:outline-none focus:border-yellow-500 transition-colors">
+                        <option value="Gram Altın">Gram Altın (TRY)</option>
+                        <option value="Ons Altın">Ons Altın (USD)</option>
+                        <option value="Dolar/TL">Dolar (USD/TRY)</option>
+                        <option value="Bitcoin">Bitcoin (BTC)</option>
+                        <option value="Gümüş">Gümüş (Silver)</option>
+                        <option value="Petrol">Petrol (Brent)</option>
+                    </select>
+                    <button onclick="runAnalysis()" id="analyze-btn"
+                        class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded font-bold transition-all flex items-center gap-2">
+                        <span>YAPAY ZEKA TAHMİNİ</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-6 space-y-6">
+
+        <!-- 1. LIVE TICKER ROW -->
+        <section id="ticker-row" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+            <!-- JS populates this -->
+            <div
+                class="col-span-full h-16 bg-slate-900/50 rounded animate-pulse border border-slate-800 flex items-center justify-center text-slate-600 text-xs">
+                Canlı Fiyatlar Yükleniyor...
+            </div>
+        </section>
+
+        <!-- 2. HISTORICAL CHART SECTION -->
+        <section class="glass-panel rounded-xl p-6 relative">
+            <div class="flex flex-col xl:flex-row justify-between items-start mb-4 gap-4">
+                <div>
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        📊 1975-2025 Tarihsel Veri Seti
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-1 max-w-2xl">
+                        Aşağıdaki veriler <strong>yıllık kapanış</strong> fiyatlarıdır. Grafikteki çizgiler, varlıkların
+                        50 yıllık yolculuğunu gösterir.
+                        Yapay Zeka bu geçmiş verileri güncel haberlerle birleştirerek analiz yapar.
+                    </p>
+                </div>
+
+                <!-- Chart Filters -->
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="toggleSet(0)"
+                        class="asset-btn active px-3 py-1 text-[10px] font-bold border border-slate-700 rounded text-white"
+                        id="btn-0">ALTIN</button>
+                    <button onclick="toggleSet(1)"
+                        class="asset-btn px-3 py-1 text-[10px] font-bold border border-slate-700 rounded text-slate-400"
+                        id="btn-1">GÜMÜŞ</button>
+                    <button onclick="toggleSet(2)"
+                        class="asset-btn px-3 py-1 text-[10px] font-bold border border-slate-700 rounded text-slate-400"
+                        id="btn-2">PETROL</button>
+                    <button onclick="toggleSet(3)"
+                        class="asset-btn active px-3 py-1 text-[10px] font-bold border border-slate-700 rounded text-white"
+                        id="btn-3">USD ENDEKSİ</button>
+                    <button onclick="toggleSet(4)"
+                        class="asset-btn px-3 py-1 text-[10px] font-bold border border-slate-700 rounded text-slate-400"
+                        id="btn-4">BITCOIN</button>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="historyChart"></canvas>
+            </div>
+        </section>
+
+        <!-- 3. AI ANALYSIS OUTPUT -->
+        <section id="analysis-panel" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+                <!-- Report -->
+                <div class="lg:col-span-8 glass-panel rounded-xl p-6 md:p-8 border-t-4 border-yellow-500">
+                    <div class="flex justify-between items-start border-b border-slate-800 pb-4 mb-6">
+                        <div>
+                            <h3 class="text-xl font-bold text-white mb-1" id="report-title">ANALİZ RAPORU</h3>
+                            <div class="text-xs text-slate-500 terminal-font flex items-center gap-2">
+                                <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                Kaynak: Google Search Grounding
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs text-slate-500">Tarihsel Benzerlik</div>
+                            <div class="text-sm font-mono text-yellow-500" id="report-era">Hesaplanıyor...</div>
+                        </div>
+                    </div>
+
+                    <div id="ai-content" class="markdown-body text-slate-300">
+                        <!-- AI Writes Here -->
+                    </div>
+                </div>
+
+                <!-- Verdict Sidebar -->
+                <div class="lg:col-span-4 space-y-4">
+                    <!-- Verdict Card -->
+                    <div class="glass-panel p-6 rounded-xl text-center relative overflow-hidden group">
+                        <div
+                            class="absolute inset-0 bg-gradient-to-b from-slate-800/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                        </div>
+                        <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 relative z-10">
+                            STRATEJİK TAVSİYE</h4>
+                        <div id="verdict-main" class="text-5xl font-black text-white mb-2 relative z-10 drop-shadow-lg">
+                            --</div>
+                        <div id="verdict-sub" class="text-sm text-slate-400 relative z-10">Analiz bekleniyor...</div>
+
+                        <div class="mt-6 grid grid-cols-2 gap-2 text-xs relative z-10">
+                            <div class="bg-slate-950/50 p-2 rounded border border-slate-700">
+                                <div class="text-slate-500">Risk</div>
+                                <div id="risk-val" class="font-bold text-white">--</div>
+                            </div>
+                            <div class="bg-slate-950/50 p-2 rounded border border-slate-700">
+                                <div class="text-slate-500">Güven</div>
+                                <div id="conf-val" class="font-bold text-blue-400">--%</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sources List -->
+                    <div class="glass-panel p-4 rounded-xl">
+                        <h4 class="text-[10px] font-bold text-slate-500 uppercase mb-3 border-b border-slate-800 pb-2">
+                            REFERANS KAYNAKLAR</h4>
+                        <ul id="sources-list" class="space-y-2 text-xs text-blue-400 terminal-font">
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // --- A. 50-YEAR HISTORICAL DATASET (HARDCODED REAL DATA) ---
+        // Yıllık Kapanış Verileri (Yaklaşık) - Grafik Görselliği İçin
+        const historicalYears = [
+            1975, 1976, 1977, 1978, 1979,
+            1980, 1982, 1985, 1987, 1989,
+            1990, 1992, 1995, 1997, 1999,
+            2000, 2002, 2005, 2007, 2008,
+            2009, 2011, 2013, 2015, 2017,
+            2019, 2020, 2021, 2022, 2023, 2024, 2025
+        ];
+
+        const datasets = [
+            {
+                label: 'Altın (USD/Ons)',
+                data: [140, 134, 165, 226, 512, 594, 447, 327, 486, 401, 386, 333, 387, 289, 290, 272, 342, 513, 836, 869, 1087, 1571, 1201, 1060, 1291, 1514, 1895, 1828, 1813, 2062, 2350, 2600],
+                borderColor: '#eab308', // Yellow
+                backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                borderWidth: 2,
+                yAxisID: 'y',
+                hidden: false
+            },
+            {
+                label: 'Gümüş (USD/Ons)',
+                data: [4.4, 4.3, 4.7, 6.0, 32.2, 16.3, 10.7, 6.0, 6.7, 5.2, 4.2, 3.7, 5.2, 5.9, 5.3, 4.6, 4.8, 8.8, 14.7, 14.9, 16.9, 28.1, 19.4, 13.8, 17.1, 17.9, 26.4, 23.3, 23.9, 23.7, 28.5, 31.0],
+                borderColor: '#94a3b8', // Slate
+                borderWidth: 2,
+                yAxisID: 'y1',
+                hidden: true
+            },
+            {
+                label: 'Brent Petrol (USD)',
+                data: [11, 12, 13, 14, 31, 36, 32, 27, 18, 19, 23, 19, 17, 19, 17, 28, 25, 54, 72, 96, 61, 111, 108, 52, 54, 64, 41, 70, 85, 77, 80, 74],
+                borderColor: '#ef4444', // Red
+                borderWidth: 2,
+                yAxisID: 'y1',
+                hidden: true
+            },
+            {
+                label: 'Dolar Endeksi (DXY)',
+                data: [102, 105, 96, 92, 85, 90, 118, 123, 85, 93, 83, 89, 84, 101, 101, 109, 102, 90, 76, 81, 77, 80, 80, 98, 92, 96, 89, 95, 103, 101, 104, 105],
+                borderColor: '#3b82f6', // Blue
+                borderWidth: 2,
+                yAxisID: 'y1',
+                hidden: false
+            },
+            {
+                label: 'Bitcoin (USD)',
+                data: [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 0.0001, 5, 700, 400, 13000, 7200, 29000, 47000, 16500, 42000, 68000, 95000],
+                borderColor: '#f97316', // Orange
+                borderWidth: 2,
+                yAxisID: 'y2',
+                hidden: true
+            }
+        ];
+
+        // Chart Config
+        const ctx = document.getElementById('historyChart').getContext('2d');
+        const historyChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: historicalYears, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                tension: 0.4,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { backgroundColor: '#1e293b', titleColor: '#fff', bodyColor: '#cbd5e1', borderColor: '#334155', borderWidth: 1 }
+                },
+                scales: {
+                    x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b' } },
+                    y: {
+                        type: 'linear', display: true, position: 'left',
+                        grid: { color: '#1e293b' }, ticks: { color: '#eab308' },
+                        title: { display: true, text: 'Altın Fiyatı ($)' }
+                    },
+                    y1: {
+                        type: 'linear', display: true, position: 'right',
+                        grid: { display: false }, ticks: { color: '#94a3b8' },
+                        title: { display: true, text: 'Diğer Emtialar ($)' }
+                    },
+                    y2: {
+                        type: 'logarithmic', display: false, position: 'right', // Bitcoin Log Scale
+                    }
+                }
+            }
+        });
+
+        function toggleSet(index) {
+            const meta = historyChart.getDatasetMeta(index);
+            meta.hidden = !meta.hidden;
+
+            // Button Style Toggle
+            const btn = document.getElementById(`btn-${index}`);
+            if (!meta.hidden) {
+                btn.classList.add('active');
+                btn.classList.remove('text-slate-400');
+                btn.classList.add('text-white');
+            } else {
+                btn.classList.remove('active');
+                btn.classList.add('text-slate-400');
+                btn.classList.remove('text-white');
+            }
+            historyChart.update();
+        }
+
+        // --- B. LIVE API FUNCTIONS ---
+
+        // 1. Ticker Fetcher
+        window.addEventListener('load', fetchTicker);
+
+        async function fetchTicker() {
+            const row = document.getElementById('ticker-row');
+            try {
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: 'ticker' })
+                });
+
+                if (!res.ok) throw new Error();
+                const { data } = await res.json();
+
+                row.innerHTML = '';
+                data.prices.forEach((item, index) => {
+                    const isPos = item.change && item.change.includes('+');
+                    const color = isPos ? 'text-green-400' : 'text-red-400';
+                    const arrow = isPos ? '▲' : '▼';
+
+                    row.innerHTML += `
+                        <div class="ticker-item bg-slate-900 border border-slate-800 rounded p-2 flex flex-col justify-between hover:border-slate-600 transition" style="animation-delay: ${index * 50}ms">
+                            <div class="text-[10px] text-slate-500 font-bold uppercase truncate">${item.name}</div>
+                            <div class="flex justify-between items-end mt-1">
+                                <span class="text-sm font-bold text-white">${item.price}</span>
+                                <span class="text-[10px] ${color}">${arrow} ${item.change}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+            } catch (e) {
+                row.innerHTML = '<div class="col-span-full text-red-500 text-xs text-center py-2">Veri akışı sağlanamadı. API Key kontrol ediniz.</div>';
+            }
+        }
+
+        // 2. Specific Asset Analysis
+        async function runAnalysis() {
+            const asset = document.getElementById('asset-select').value;
+            const btn = document.getElementById('analyze-btn');
+            const panel = document.getElementById('analysis-panel');
+            const content = document.getElementById('ai-content');
+
+            // UI Loading State
+            btn.disabled = true;
+            btn.innerHTML = `<svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> ANALİZ EDİLİYOR...`;
+
+            panel.classList.remove('hidden');
+            content.innerHTML = `<div class="py-12 text-center text-slate-500 animate-pulse">
+                <p>Google Haberler taranıyor...</p>
+                <p class="text-xs mt-2">1970-2024 Veri setleri ile karşılaştırılıyor...</p>
+            </div>`;
+            panel.scrollIntoView({ behavior: 'smooth' });
+
+            try {
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: 'analysis', asset: asset })
+                });
+
+                if (!res.ok) throw new Error("API Hatası");
+                const { data, sources } = await res.json();
+
+                // Render Data
+                document.getElementById('report-title').innerText = `${asset.toUpperCase()} STRATEJİK RAPORU`;
+                content.innerHTML = marked.parse(data.report_markdown);
+
+                // Verdict Logic
+                const vMain = document.getElementById('verdict-main');
+                vMain.innerText = data.verdict;
+
+                if (data.verdict.includes('AL')) vMain.className = "text-5xl font-black text-green-500 mb-2 relative z-10 drop-shadow-[0_0_15px_rgba(34,197,94,0.5)]";
+                else if (data.verdict.includes('SAT')) vMain.className = "text-5xl font-black text-red-500 mb-2 relative z-10 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]";
+                else vMain.className = "text-5xl font-black text-yellow-500 mb-2 relative z-10";
+
+                document.getElementById('verdict-sub').innerText = `Öngörülen yön: ${data.verdict}`;
+                document.getElementById('risk-val').innerText = data.risk_level;
+                document.getElementById('conf-val').innerText = `${data.confidence}%`;
+                document.getElementById('report-era').innerText = "Benzeyen Dönem: " + (new Date().getFullYear() - 1); // Mock era text, AI writes inside report
+
+                // Sources
+                const sList = document.getElementById('sources-list');
+                sList.innerHTML = '';
+                if (sources && sources.length > 0) {
+                    sources.forEach(s => {
+                        sList.innerHTML += `<li class="truncate hover:text-white transition"><a href="${s.uri}" target="_blank">🔗 ${s.title}</a></li>`;
+                    });
+                } else {
+                    sList.innerHTML = '<li>Kaynak bilgisi API tarafından sağlanmadı.</li>';
+                }
+
+            } catch (e) {
+                content.innerHTML = `<div class="text-red-500 text-center">Hata oluştu: ${e.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `YAPAY ZEKA TAHMİNİ`;
+            }
+        }
+    </script>
+</body>
+
+</html>
