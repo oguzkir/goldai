@@ -17,19 +17,20 @@ export default async function handler(req, res) {
 
     // --- MOD 1: TICKER ---
     if (mode === 'ticker') {
-        systemInstruction = "Sen bir finansal veri asistanısın. Sadece geçerli bir JSON objesi döndür. Asla markdown ```json``` etiketi kullanma, sadece saf JSON ver. Kaynakları mutlaka ekle.";
+        systemInstruction = "Sen bir finansal veri asistanısın. Sadece geçerli bir JSON objesi döndür. Kaynakları mutlaka ekle.";
         userPrompt = `
       GÖREV: Google Arama ile şu anki güncel fiyatları bul:
       Gram Altın (TRY), Ons Altın (USD), Gümüş (Ons/USD), Bitcoin (BTC/USD), Brent Petrol (USD), USD/TRY, EUR/TRY, İsviçre Frangı.
 
-      ÇIKTI FORMATI (SAF JSON):
+      ÇIKTI FORMATI (SAF JSON - ASLA MARKDOWN KULLANMA):
       {
         "prices": [
           {"name": "Gram Altın", "price": "3,000 ₺", "change": "+0.5%"},
           ...
         ],
         "sources": [
-          {"title": "BloombergHT", "uri": "https://www.bloomberght.com"}
+          {"title": "BloombergHT", "uri": "https://www.bloomberght.com"},
+          {"title": "Investing", "uri": "https://tr.investing.com"}
         ]
       }
     `;
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
     // --- MOD 2: ANALİZ ---
     else if (mode === 'analysis') {
         const selectedAsset = asset || "Genel Piyasa";
-        systemInstruction = "Sen kıdemli bir analistsin. Çıktı formatın daima geçerli bir JSON objesi olmalı. Asla markdown kullanma.";
+        systemInstruction = "Sen kıdemli bir analistsin. Çıktı formatın daima geçerli bir JSON objesi olmalı. Kaynakları JSON içine ekle.";
 
         userPrompt = `
       "${selectedAsset}" için detaylı bir analiz yap.
@@ -46,14 +47,14 @@ export default async function handler(req, res) {
       2. Tarihsel benzerlik kur.
       3. Tahmin yap.
 
-      ÇIKTI FORMATI (SAF JSON):
+      ÇIKTI FORMATI (SAF JSON - ASLA MARKDOWN KULLANMA):
       {
         "report_markdown": "## Rapor Başlığı\\n\\nİçerik...",
         "verdict": "AL",
         "risk_level": "Yüksek",
         "confidence": 85,
         "sources": [
-           {"title": "Kaynak Adı", "uri": "https://link.com"}
+           {"title": "Haber Kaynağı Adı", "uri": "https://kaynak-linki.com"}
         ]
       }
     `;
@@ -85,7 +86,7 @@ export default async function handler(req, res) {
 
         if (!rawText) throw new Error("AI boş yanıt döndürdü.");
 
-        // JSON Temizliği (Markdown taglerini temizle)
+        // JSON Temizliği
         const jsonMatch = rawText.match(/\{[\s\S]*\}/);
         if (jsonMatch) rawText = jsonMatch[0];
 
@@ -94,7 +95,16 @@ export default async function handler(req, res) {
             parsedResult = JSON.parse(rawText);
         } catch (e) {
             console.error("JSON Parse Hatası:", rawText);
-            throw new Error("AI geçerli bir JSON üretemedi.");
+            // Hata durumunda boş JSON döndür, uygulama çökmesin
+            parsedResult = {
+                error: "JSON Hatası",
+                report_markdown: "Veri işlenirken hata oluştu. Lütfen tekrar deneyin.",
+                verdict: "NÖTR",
+                risk_level: "--",
+                confidence: 0,
+                prices: [],
+                sources: []
+            };
         }
 
         // KAYNAK BİRLEŞTİRME
@@ -107,7 +117,7 @@ export default async function handler(req, res) {
         // 2. AI'nın JSON içine yazdığı kaynaklar
         const jsonSources = parsedResult.sources || [];
 
-        // İkisini birleştir
+        // İkisini birleştir (Çift kayıtları engelle)
         const allSources = [...metaSources, ...jsonSources].filter((v, i, a) => a.findIndex(t => (t.uri === v.uri)) === i);
 
         return res.status(200).json({ data: parsedResult, sources: allSources });
