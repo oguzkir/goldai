@@ -77,7 +77,6 @@ export default async function handler(req, res) {
     }
 
     try {
-        // Gemini 2.5 Flash Modelini (Search Grounding destekli) kullanıyoruz
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
@@ -86,8 +85,8 @@ export default async function handler(req, res) {
             body: JSON.stringify({
                 contents: [{ parts: [{ text: userPrompt }] }],
                 systemInstruction: { parts: [{ text: systemInstruction }] },
-                tools: [{ google_search: {} }], // Google Grounding Aktif
-                generationConfig: { responseMimeType: "application/json" } // JSON çıktısı zorunlu
+                tools: [{ google_search: {} }],
+                generationConfig: { responseMimeType: "application/json" }
             })
         });
 
@@ -99,7 +98,6 @@ export default async function handler(req, res) {
 
         const data = await response.json();
 
-        // Güvenli JSON parse işlemi
         let parsedResult;
         const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
@@ -110,12 +108,10 @@ export default async function handler(req, res) {
         try {
             parsedResult = JSON.parse(rawText);
         } catch (e) {
-            // AI bazen markdown bloğu ```json ... ``` içinde verir, temizleyelim
             const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
             parsedResult = JSON.parse(cleanText);
         }
 
-        // Kaynakları ayıkla
         const sources = data.candidates?.[0]?.groundingMetadata?.groundingAttributions?.map(a => ({
             title: a.web?.title || "Web Kaynağı",
             uri: a.web?.uri
