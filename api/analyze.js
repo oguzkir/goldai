@@ -6,7 +6,6 @@ export default async function handler(req, res) {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-        console.error("API Key eksik!");
         return res.status(500).json({ error: 'Server API Key eksik.' });
     }
 
@@ -17,23 +16,20 @@ export default async function handler(req, res) {
 
     // --- MOD 1: TICKER ---
     if (mode === 'ticker') {
-        systemInstruction = "Sen bir finansal veri botusun. Sadece geçerli bir JSON objesi döndür. Asla markdown ```json``` etiketi kullanma, sadece saf JSON ver.";
+        systemInstruction = "Sen bir finansal veri asistanısın. Sadece geçerli bir JSON objesi döndür. Kaynakları mutlaka ekle.";
         userPrompt = `
       GÖREV: Google Arama ile şu anki güncel fiyatları bul:
-      1. Gram Altın (TRY)
-      2. Ons Altın (USD)
-      3. Gümüş (Ons/USD)
-      4. Bitcoin (BTC/USD)
-      5. Brent Petrol (USD)
-      6. USD/TRY
-      7. EUR/TRY
-      8. İsviçre Frangı (CHF/TRY)
+      Gram Altın (TRY), Ons Altın (USD), Gümüş (Ons/USD), Bitcoin (BTC/USD), Brent Petrol (USD), USD/TRY, EUR/TRY, İsviçre Frangı.
 
-      ÇIKTI FORMATI (SAF JSON):
+      ÇIKTI FORMATI (SAF JSON - ASLA MARKDOWN KULLANMA):
       {
         "prices": [
           {"name": "Gram Altın", "price": "3,000 ₺", "change": "+0.5%"},
-          ... diğerleri
+          ...
+        ],
+        "sources": [
+          {"title": "BloombergHT", "uri": "https://www.bloomberght.com"},
+          {"title": "Investing", "uri": "https://tr.investing.com"}
         ]
       }
     `;
@@ -42,21 +38,23 @@ export default async function handler(req, res) {
     // --- MOD 2: ANALİZ ---
     else if (mode === 'analysis') {
         const selectedAsset = asset || "Genel Piyasa";
-        systemInstruction = "Sen kıdemli bir piyasa analistisin. Çıktı formatın daima geçerli bir JSON objesi olmalı. Asla markdown etiketi kullanma.";
+        systemInstruction = "Sen kıdemli bir analistsin. Çıktı formatın daima geçerli bir JSON objesi olmalı. Kaynakları JSON içine ekle.";
 
         userPrompt = `
       "${selectedAsset}" için detaylı bir analiz yap.
-      
-      1. Canlı verileri ve haberleri Google'dan bul.
-      2. Tarihsel benzerlik kur (1980, 2008 vb.).
+      1. Canlı verileri Google'dan bul.
+      2. Tarihsel benzerlik kur.
       3. Tahmin yap.
 
-      ÇIKTI FORMATI (SAF JSON):
+      ÇIKTI FORMATI (SAF JSON - ASLA MARKDOWN KULLANMA):
       {
-        "report_markdown": "## Rapor Başlığı\\n\\nBuraya markdown formatında rapor içeriği...",
+        "report_markdown": "## Rapor Başlığı\\n\\nİçerik...",
         "verdict": "AL",
         "risk_level": "Yüksek",
-        "confidence": 85
+        "confidence": 85,
+        "sources": [
+           {"title": "Haber Kaynağı Adı", "uri": "https://kaynak-linki.com"}
+        ]
       }
     `;
     } else {
@@ -64,7 +62,6 @@ export default async function handler(req, res) {
     }
 
     try {
-        // Model URL
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
@@ -73,48 +70,55 @@ export default async function handler(req, res) {
             body: JSON.stringify({
                 contents: [{ parts: [{ text: userPrompt }] }],
                 systemInstruction: { parts: [{ text: systemInstruction }] },
-                tools: [{ google_search: {} }], // Arama Aktif
-                // DİKKAT: JSON Modu Kaldırıldı (Çakışmayı önlemek için)
-                // generationConfig: { responseMimeType: "application/json" } <-- SİLİNDİ
+                tools: [{ google_search: {} }]
             })
         });
 
         if (!response.ok) {
             const errText = await response.text();
-            throw new Error(`Gemini API Error: ${response.status} - ${errText}`);
+            throw new Error(`Gemini API Error: ${response.status}`);
         }
 
         const data = await response.json();
-
-        // --- MANUEL JSON TEMİZLİK VE PARSE İŞLEMİ ---
         let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!rawText) throw new Error("AI boş yanıt döndürdü.");
 
-        // AI bazen ```json ... ``` içinde veriyor, bazen düz veriyor.
-        // Regex ile sadece ilk { ile son } arasını alarak temizliyoruz.
+        // JSON Temizliği
         const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-
-        if (jsonMatch) {
-            rawText = jsonMatch[0];
-        }
+        if (jsonMatch) rawText = jsonMatch[0];
 
         let parsedResult;
         try {
             parsedResult = JSON.parse(rawText);
         } catch (e) {
-            console.error("JSON Parse Hatası:", e);
-            console.log("Hatalı Metin:", rawText);
-            throw new Error("AI yanıtı geçerli JSON formatında değil.");
+            console.error("JSON Parse Hatası:", rawText);
+            // Basit bir fallback JSON oluştur (Uygulama çökmesin diye)
+            parsedResult = {
+                error: "JSON Hatası",
+                report_markdown: "Veri işlenirken hata oluştu. Lütfen tekrar deneyin.",
+                verdict: "NÖTR",
+                risk_level: "--",
+                confidence: 0,
+                prices: [],
+                sources: []
+            };
         }
 
-        // Kaynakları al
-        const sources = data.candidates?.[0]?.groundingMetadata?.groundingAttributions?.map(a => ({
+        // KAYNAK BİRLEŞTİRME (EN ÖNEMLİ KISIM)
+        // 1. API Metadata'dan gelen kaynaklar
+        const metaSources = data.candidates?.[0]?.groundingMetadata?.groundingAttributions?.map(a => ({
             title: a.web?.title || "Web Kaynağı",
             uri: a.web?.uri
         })).filter(s => s.uri) || [];
 
-        return res.status(200).json({ data: parsedResult, sources });
+        // 2. AI'nın JSON içine yazdığı kaynaklar
+        const jsonSources = parsedResult.sources || [];
+
+        // İkisini birleştir (Çift kayıtları engelle)
+        const allSources = [...metaSources, ...jsonSources].filter((v, i, a) => a.findIndex(t => (t.uri === v.uri)) === i);
+
+        return res.status(200).json({ data: parsedResult, sources: allSources });
 
     } catch (error) {
         console.error('Handler Error:', error.message);
